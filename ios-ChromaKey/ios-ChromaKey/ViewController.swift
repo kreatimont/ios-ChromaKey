@@ -7,14 +7,77 @@
 //
 
 import UIKit
+import AVFoundation
 
 class ViewController: UIViewController {
 
     @IBOutlet weak var imageView: UIImageView!
     
+    let imagePickerController = UIImagePickerController()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        
+        
+    }
+    
+    @IBAction func handlePickVideo(_ sender: Any) {
+        self.loadVideoFromGallery()
+    }
+    
+    func loadVideoFromGallery() {
+        imagePickerController.sourceType = .photoLibrary
+        imagePickerController.delegate = self
+        imagePickerController.mediaTypes = ["public.movie"]
+        
+        self.present(imagePickerController, animated: true, completion: nil)
+    }
+    
+    func extractFrames(url: URL, fps: Double = 24) {
+        DispatchQueue.global().async {
+            let asset = AVAsset(url: url)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            for i in 0..<Int(asset.duration.seconds * fps) {
+                do {
+                    let imageRef = try imageGenerator.copyCGImage(at: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps)), actualTime: nil)
+                    if let image = self.changeImageBG(cgImage: imageRef) {
+                        DispatchQueue.main.async {
+                            self.imageView.image = image
+                        }
+                    }
+                    
+                } catch let error {
+                    print("slicing error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    func changeImageBG(cgImage: CGImage) -> UIImage? {
+        let foregroundCIImage = CIImage(cgImage: cgImage)
+        
+        guard let backgroundImage = UIImage(named: "background"), let backgroundCGImage = backgroundImage.cgImage else {
+            return nil
+        }
+        
+        let backgroundCIImage = CIImage(cgImage: backgroundCGImage)
+        
+        let chromaCIFilter = self.chromaKeyFilter(fromHue: 0.5, toHue: 0.6)
+        chromaCIFilter?.setValue(foregroundCIImage, forKey: kCIInputImageKey)
+        let sourceCIImageWithoutBackground = chromaCIFilter?.outputImage
+        
+        let compositor = CIFilter(name:"CISourceOverCompositing")
+        compositor?.setValue(sourceCIImageWithoutBackground, forKey: kCIInputImageKey)
+        compositor?.setValue(backgroundCIImage, forKey: kCIInputBackgroundImageKey)
+        if let compositedCIImage = compositor?.outputImage {
+            return UIImage(ciImage: compositedCIImage)
+        }
+        return nil
+    }
+    
+    func startProccedSingleImage() {
         guard let foregroundImage = UIImage(named: "me"), let foregroundCGImage = foregroundImage.cgImage else {
             return
         }
@@ -38,7 +101,6 @@ class ViewController: UIViewController {
         if let compositedCIImage = compositor?.outputImage {
             self.imageView.image = UIImage(ciImage: compositedCIImage)
         }
-        
     }
 
     //Chroma Key implementation
@@ -85,3 +147,15 @@ class ViewController: UIViewController {
 
 }
 
+
+extension ViewController: UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        picker.dismiss(animated: true, completion: nil)
+        if let videoURL = info[UIImagePickerController.InfoKey.mediaURL] as? URL {
+            self.extractFrames(url: videoURL, fps: 120)
+        }
+        
+    }
+    
+}
