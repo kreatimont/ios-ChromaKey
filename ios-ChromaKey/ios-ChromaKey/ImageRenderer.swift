@@ -24,6 +24,7 @@ struct RenderSettings {
     }
     
     var outputURL: URL {
+        
         let fileManager = FileManager.default
         if let tmpDirURL = fileManager.urls(for: .documentDirectory, in: .allDomainsMask).first {
             return tmpDirURL.appendingPathComponent(videoFilename).appendingPathExtension(videoFilenameExt)
@@ -95,7 +96,10 @@ class ImageAnimator {
                 let audioInputUrl = audioInput
                 let videoInputUrl = self.settings.outputURL
                 
-                let outputURL = FileManager.default.urls(for: .documentDirectory, in: .allDomainsMask).first!.appendingPathComponent("final_render.mp4")
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "HH_mm_ss_dd_MM_YYYY"
+                
+                let outputURL = FileManager.default.urls(for: .documentDirectory, in: .allDomainsMask).first!.appendingPathComponent("final_render\(dateFormatter.string(from: Date())).mp4")
                 
                 let videoAsset = AVAsset(url: videoInputUrl)
                 let videoTimeRange = CMTimeRange(start: .zero, duration: videoAsset.duration)

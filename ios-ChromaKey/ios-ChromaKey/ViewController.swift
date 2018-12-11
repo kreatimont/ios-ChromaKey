@@ -30,6 +30,8 @@ class ViewController: UIViewController {
     var selectingFirst = false
     var selectingSecond = false
     
+    var indicator: UIActivityIndicatorView?
+    
     //lifecycle
     
     override func viewDidLoad() {
@@ -43,6 +45,10 @@ class ViewController: UIViewController {
         }
         
         self.mergeButton.isHidden = true
+     
+        let tap = UITapGestureRecognizer(target: self.view, action: #selector(UIView.endEditing(_:)))
+        tap.cancelsTouchesInView = false
+        self.view.addGestureRecognizer(tap)
         
     }
     
@@ -64,8 +70,8 @@ class ViewController: UIViewController {
     @IBAction func handleMerge(_ sender: Any) {
         if let fg = self.fgURL, let bg = self.bgURL {
             
-            var maxX = 400
-            var maxY = 400
+            var maxX = 1000
+            var maxY = 550
             
             if let maxXStr = self.maxXField.text, let maxXInt = Int(maxXStr) {
                 maxX = maxXInt
@@ -74,6 +80,14 @@ class ViewController: UIViewController {
             if let maxYStr = self.maxYField.text, let maxYInt = Int(maxYStr) {
                 maxY = maxYInt
             }
+            
+            let activityIndicator = UIActivityIndicatorView(style: .whiteLarge)
+            activityIndicator.frame = self.view.bounds
+            activityIndicator.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+            self.view.addSubview(activityIndicator)
+            activityIndicator.startAnimating()
+            
+            self.indicator = activityIndicator
             
             self.extractFrames(url: fg, bgURL: bg, size: CGSize(width: maxX, height: maxY))
         }
@@ -85,7 +99,7 @@ class ViewController: UIViewController {
         let asset = AVAsset(url: url)
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         if let imageRef = try? imageGenerator.copyCGImage(at: CMTime(value: CMTimeValue(12), timescale: asset.duration.timescale), actualTime: nil) {
-            return UIImage(cgImage: imageRef, scale: 1, orientation: .down)
+            return UIImage(cgImage: imageRef)
         }
         return nil
     }
@@ -163,10 +177,17 @@ class ViewController: UIViewController {
                 Thread.sleep(forTimeInterval: 0.01)
             }
             
-            let settings = RenderSettings()
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "HH_mm_ss_dd_MM_YYYY"
+            var settings = RenderSettings()
+            settings.height = size.height
+            settings.width = size.width
+            settings.videoFilename = "render_\(dateFormatter.string(from: Date()))"
             let imageAnimator = ImageAnimator(renderSettings: settings, imageFileNames: imageNames, audioFileURL: audioTrackUrl)
             imageAnimator.render() {
                 DispatchQueue.main.async {
+                    self.indicator?.removeFromSuperview()
+                    self.indicator = nil
                     let alerController = UIAlertController(title: "Successfuly rendered new video", message: "Check Photos app", preferredStyle: .alert)
                     alerController.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
                     self.present(alerController, animated: true, completion: nil)
