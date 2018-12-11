@@ -85,7 +85,7 @@ class ViewController: UIViewController {
         let asset = AVAsset(url: url)
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         if let imageRef = try? imageGenerator.copyCGImage(at: CMTime(value: CMTimeValue(12), timescale: asset.duration.timescale), actualTime: nil) {
-            return UIImage(cgImage: imageRef)
+            return UIImage(cgImage: imageRef, scale: 1, orientation: .down)
         }
         return nil
     }
