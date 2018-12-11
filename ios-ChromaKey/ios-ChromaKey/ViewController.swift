@@ -8,6 +8,7 @@
 
 import UIKit
 import AVFoundation
+import Photos
 
 class ViewController: UIViewController {
 
@@ -18,7 +19,11 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        
+//        if PHPhotoLibrary.authorizationStatus() != .authorized {
+//            PHPhotoLibrary.requestAuthorization { status in
+//                guard status == .authorized else { return }
+//            }
+//        }
         
     }
     
@@ -34,37 +39,74 @@ class ViewController: UIViewController {
         self.present(imagePickerController, animated: true, completion: nil)
     }
     
-    func extractFrames(url: URL, fps: Double = 24) {
+    func extractFrames(url: URL, fps: Int = 24) {
         DispatchQueue.global().async {
             let asset = AVAsset(url: url)
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
-            for i in 0..<Int(asset.duration.seconds * fps) {
-                do {
-                    let imageRef = try imageGenerator.copyCGImage(at: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps)), actualTime: nil)
+            imageGenerator.requestedTimeToleranceAfter = .zero
+            imageGenerator.requestedTimeToleranceBefore = .zero
+            
+            print("Seconds: \(asset.duration.seconds)")
+            
+            var cmTimes = [CMTime]()
+            var frameForTimes = [NSValue]()
+            let sampleCounts = Int(asset.duration.seconds) * fps
+            let totalTimeLength = Int(asset.duration.seconds * Double(asset.duration.timescale))
+            let step = totalTimeLength / sampleCounts
+            
+            for i in 0 ..< sampleCounts {
+                let cmTime = CMTime(value: CMTimeValue(i * step), timescale: asset.duration.timescale)
+                cmTimes.append(cmTime)
+                frameForTimes.append(NSValue(time: cmTime))
+            }
+
+//            Async way
+//            var savedCount = 0
+//            imageGenerator.generateCGImagesAsynchronously(forTimes: frameForTimes, completionHandler: { (reqTime, imageRef, actualTime, res, error) in
+//                savedCount += 1
+//                if let cgImage = imageRef {
+//                    UIImageWriteToSavedPhotosAlbum(UIImage(cgImage: cgImage), nil, nil, nil)
+//                }
+//            })
+            
+            var images = [UIImage]()
+            for cmTime in cmTimes {
+                if let imageRef = try? imageGenerator.copyCGImage(at: cmTime, actualTime: nil) {
                     if let image = self.changeImageBG(cgImage: imageRef) {
                         DispatchQueue.main.async {
                             self.imageView.image = image
                         }
+                        images.append(image)
                     }
                     
-                } catch let error {
-                    print("slicing error: \(error.localizedDescription)")
                 }
             }
+            
+
+            let settings = RenderSettings()
+            let imageAnimator = ImageAnimator(renderSettings: settings, images: images)
+            imageAnimator.render() {
+                DispatchQueue.main.async {
+                    self.imageView.image = images.first
+                }
+                print("successfully rendered images")
+            }
+            
         }
     }
-    
+
+    let ciContext = CIContext()
     func changeImageBG(cgImage: CGImage) -> UIImage? {
         let foregroundCIImage = CIImage(cgImage: cgImage)
         
-        guard let backgroundImage = UIImage(named: "background"), let backgroundCGImage = backgroundImage.cgImage else {
+        guard let backgroundImage = UIImage(named: "bgKeyboard"), let backgroundCGImage = backgroundImage.cgImage else {
             return nil
         }
         
         let backgroundCIImage = CIImage(cgImage: backgroundCGImage)
         
-        let chromaCIFilter = self.chromaKeyFilter(fromHue: 0.5, toHue: 0.6)
+        let chromaCIFilter = self.chromaKeyFilter(fromHue: 0.20, toHue: 0.55)
         chromaCIFilter?.setValue(foregroundCIImage, forKey: kCIInputImageKey)
         let sourceCIImageWithoutBackground = chromaCIFilter?.outputImage
         
@@ -72,6 +114,10 @@ class ViewController: UIViewController {
         compositor?.setValue(sourceCIImageWithoutBackground, forKey: kCIInputImageKey)
         compositor?.setValue(backgroundCIImage, forKey: kCIInputBackgroundImageKey)
         if let compositedCIImage = compositor?.outputImage {
+            
+            if let cgRef = ciContext.createCGImage(compositedCIImage, from: compositedCIImage.extent) {
+                return UIImage(cgImage: cgRef)
+            }
             return UIImage(ciImage: compositedCIImage)
         }
         return nil
@@ -153,7 +199,7 @@ extension ViewController: UIImagePickerControllerDelegate, UINavigationControlle
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         picker.dismiss(animated: true, completion: nil)
         if let videoURL = info[UIImagePickerController.InfoKey.mediaURL] as? URL {
-            self.extractFrames(url: videoURL, fps: 120)
+            self.extractFrames(url: videoURL, fps: 24)
         }
         
     }
