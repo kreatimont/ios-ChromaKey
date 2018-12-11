@@ -115,6 +115,12 @@ class ViewController: UIViewController {
             bgImageGenerator.requestedTimeToleranceBefore = .zero
             bgImageGenerator.maximumSize = size
             
+            let audioTrackUrl = FileManager.default.urls(for: .documentDirectory, in: .allDomainsMask).first!.appendingPathComponent("auido.m4a")
+            var audioTrackSaved = false
+            asset.writeAudioTrackToURL(audioTrackUrl, completion: { (success, error) in
+                audioTrackSaved = true
+            })
+            
             print("Seconds: \(asset.duration.seconds)")
             
             var cmTimes = [CMTime]()
@@ -153,8 +159,12 @@ class ViewController: UIViewController {
             }
             
 
+            while !audioTrackSaved {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            
             let settings = RenderSettings()
-            let imageAnimator = ImageAnimator(renderSettings: settings, imageFileNames: imageNames)
+            let imageAnimator = ImageAnimator(renderSettings: settings, imageFileNames: imageNames, audioFileURL: audioTrackUrl)
             imageAnimator.render() {
                 DispatchQueue.main.async {
                     let alerController = UIAlertController(title: "Successfuly rendered new video", message: "Check Photos app", preferredStyle: .alert)

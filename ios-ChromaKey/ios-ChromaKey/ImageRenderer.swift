@@ -42,6 +42,8 @@ class ImageAnimator {
     var images: [UIImage]!
     var imageFileNames: [String]
     
+    let audioFileUrl: URL?
+    
     var frameNum = 0
     
     class func saveToLibrary(videoURL: URL) {
@@ -67,10 +69,11 @@ class ImageAnimator {
         }
     }
     
-    init(renderSettings: RenderSettings, imageFileNames: [String]) {
+    init(renderSettings: RenderSettings, imageFileNames: [String], audioFileURL: URL?) {
         settings = renderSettings
         videoWriter = VideoWriter(renderSettings: settings)
         self.imageFileNames = imageFileNames
+        self.audioFileUrl = audioFileURL
 //        if let array = images {
 //            self.images = array
 //        } else {
@@ -85,8 +88,52 @@ class ImageAnimator {
         
         videoWriter.start()
         videoWriter.render(appendPixelBuffers: appendPixelBuffers) {
-            ImageAnimator.saveToLibrary(videoURL: self.settings.outputURL)
-            completion()
+            
+            if let audioInput = self.audioFileUrl {
+                //TODO: mix video with audio
+                let mixComposition = AVMutableComposition()
+                let audioInputUrl = audioInput
+                let videoInputUrl = self.settings.outputURL
+                
+                let outputURL = FileManager.default.urls(for: .documentDirectory, in: .allDomainsMask).first!.appendingPathComponent("final_render.mp4")
+                
+                let videoAsset = AVAsset(url: videoInputUrl)
+                let videoTimeRange = CMTimeRange(start: .zero, duration: videoAsset.duration)
+                
+                let compositionVideoTrack = mixComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+                do {
+                    
+                    try compositionVideoTrack?.insertTimeRange(videoTimeRange, of: videoAsset.tracks(withMediaType: .video).first!, at: .zero)
+                    
+                    let audioAsset = AVURLAsset(url: audioInputUrl)
+                    let audioTimeRange = CMTimeRange(start: .zero, duration: audioAsset.duration)
+                    
+                    let compositionAudioTrack = mixComposition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+                    
+                    try compositionAudioTrack?.insertTimeRange(audioTimeRange, of: audioAsset.tracks(withMediaType: .audio).first!, at: .zero)
+                    
+                    let exportSession = AVAssetExportSession(asset: mixComposition, presetName: AVAssetExportPresetHighestQuality)
+                    exportSession?.outputFileType = .mp4
+                    exportSession?.outputURL = outputURL
+                    
+                    exportSession?.exportAsynchronously {
+                        ImageAnimator.saveToLibrary(videoURL: outputURL)
+                        DispatchQueue.main.async {
+                            completion()
+                        }
+                    }
+                    
+                } catch let error {
+                    print("error in\(#function) at: \(#line): \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        
+                    }
+                }
+            } else {
+                ImageAnimator.saveToLibrary(videoURL: self.settings.outputURL)
+                completion()
+            }
+            
         }
         
     }
@@ -266,9 +313,7 @@ class VideoWriter {
             if isFinished {
                 self.videoWriterInput.markAsFinished()
                 self.videoWriter.finishWriting() {
-                    DispatchQueue.main.async {
-                        completion()
-                    }
+                    completion()
                 }
             }
             else {
