@@ -12,26 +12,41 @@ import Photos
 
 class ViewController: UIViewController {
 
+    //views
+    
     @IBOutlet weak var imageView: UIImageView!
     @IBOutlet weak var secondImageView: UIImageView!
+    @IBOutlet weak var mergeButton: UIButton!
+    @IBOutlet weak var maxXField: UITextField!
+    @IBOutlet weak var maxYField: UITextField!
+    
+    //var
     
     let imagePickerController = UIImagePickerController()
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        if PHPhotoLibrary.authorizationStatus() != .authorized {
-            PHPhotoLibrary.requestAuthorization { status in
-            }
-        }
-        
-    }
     
     var fgURL: URL?
     var bgURL: URL?
     
     var selectingFirst = false
     var selectingSecond = false
+    
+    //lifecycle
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        FilesHelper.instance.clearImages()
+        
+        if PHPhotoLibrary.authorizationStatus() != .authorized {
+            PHPhotoLibrary.requestAuthorization { status in
+            }
+        }
+        
+        self.mergeButton.isHidden = true
+        
+    }
+    
+    //actions
     
     @IBAction func handlePickVideo(_ sender: Any) {
         self.loadVideoFromGallery()
@@ -48,8 +63,31 @@ class ViewController: UIViewController {
     
     @IBAction func handleMerge(_ sender: Any) {
         if let fg = self.fgURL, let bg = self.bgURL {
-            self.extractFrames(url: fg, bgURL: bg)
+            
+            var maxX = 400
+            var maxY = 400
+            
+            if let maxXStr = self.maxXField.text, let maxXInt = Int(maxXStr) {
+                maxX = maxXInt
+            }
+            
+            if let maxYStr = self.maxYField.text, let maxYInt = Int(maxYStr) {
+                maxY = maxYInt
+            }
+            
+            self.extractFrames(url: fg, bgURL: bg, size: CGSize(width: maxX, height: maxY))
         }
+    }
+    
+    //working with videos code
+    
+    func extractThumbnailFromVideo(url: URL) -> UIImage? {
+        let asset = AVAsset(url: url)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        if let imageRef = try? imageGenerator.copyCGImage(at: CMTime(value: CMTimeValue(12), timescale: asset.duration.timescale), actualTime: nil) {
+            return UIImage(cgImage: imageRef)
+        }
+        return nil
     }
     
     func loadVideoFromGallery() {
@@ -61,19 +99,21 @@ class ViewController: UIViewController {
         self.selectingFirst = true
     }
     
-    func extractFrames(url: URL, bgURL: URL, fps: Int = 24) {
+    func extractFrames(url: URL, bgURL: URL, fps: Int = 24, size: CGSize) {
         DispatchQueue.global().async {
             let asset = AVAsset(url: url)
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.requestedTimeToleranceAfter = .zero
             imageGenerator.requestedTimeToleranceBefore = .zero
+            imageGenerator.maximumSize = size
             
             let bgAsset = AVAsset(url: bgURL)
             let bgImageGenerator = AVAssetImageGenerator(asset: bgAsset)
             bgImageGenerator.appliesPreferredTrackTransform = true
             bgImageGenerator.requestedTimeToleranceAfter = .zero
             bgImageGenerator.requestedTimeToleranceBefore = .zero
+            bgImageGenerator.maximumSize = size
             
             print("Seconds: \(asset.duration.seconds)")
             
@@ -89,42 +129,46 @@ class ViewController: UIViewController {
                 frameForTimes.append(NSValue(time: cmTime))
             }
             
-            var images = [UIImage]()
+            var imageNames = [String]()
+            
             var prevBackground = UIImage(named: "default_bg")!
             
+            var counter = 1
             for cmTime in cmTimes {
                 if let imageRef = try? imageGenerator.copyCGImage(at: cmTime, actualTime: nil) {
+                    var name = "merged_\(counter)"
                     if let bgImage = try? bgImageGenerator.copyCGImage(at: cmTime, actualTime: nil) {
                         if let mergedImage = self.merge(cgImage: imageRef, with: UIImage(cgImage: bgImage)) {
-                            images.append(mergedImage)
+                            _ = FilesHelper.instance.saveImage(image: mergedImage, name: name)
                             prevBackground = UIImage(cgImage: bgImage)
-                            DispatchQueue.main.async {
-                                self.imageView.image = mergedImage
-                            }
                         }
                     } else {
                         if let image = self.merge(cgImage: imageRef, with: prevBackground) {
-                            images.append(image)
+                            _ = FilesHelper.instance.saveImage(image: image, name: name)
                         }
                     }
-                    
+                    imageNames.append(name)
+                    counter += 1
                 }
             }
             
 
             let settings = RenderSettings()
-            let imageAnimator = ImageAnimator(renderSettings: settings, images: images)
+            let imageAnimator = ImageAnimator(renderSettings: settings, imageFileNames: imageNames)
             imageAnimator.render() {
                 DispatchQueue.main.async {
-                    self.imageView.image = images.first
+                    let alerController = UIAlertController(title: "Successfuly rendered new video", message: "Check Photos app", preferredStyle: .alert)
+                    alerController.addAction(UIAlertAction(title: "OK", style: .default, handler: nil))
+                    self.present(alerController, animated: true, completion: nil)
+                    print("successfully rendered images")
                 }
-                print("successfully rendered images")
+                
             }
             
         }
     }
 
-    let ciContext = CIContext()
+    //Merging pics implementation(Chroma Key)
     
     func merge(cgImage: CGImage, with background: UIImage) -> UIImage? {
         let foregroundCIImage = CIImage(cgImage: cgImage)
@@ -142,8 +186,10 @@ class ViewController: UIViewController {
         let compositor = CIFilter(name:"CISourceOverCompositing")
         compositor?.setValue(sourceCIImageWithoutBackground, forKey: kCIInputImageKey)
         compositor?.setValue(backgroundCIImage, forKey: kCIInputBackgroundImageKey)
+    
+        let ciContext = CIContext()
+        
         if let compositedCIImage = compositor?.outputImage {
-            
             if let cgRef = ciContext.createCGImage(compositedCIImage, from: compositedCIImage.extent) {
                 return UIImage(cgImage: cgRef)
             }
@@ -168,6 +214,7 @@ class ViewController: UIViewController {
         let compositor = CIFilter(name:"CISourceOverCompositing")
         compositor?.setValue(sourceCIImageWithoutBackground, forKey: kCIInputImageKey)
         compositor?.setValue(backgroundCIImage, forKey: kCIInputBackgroundImageKey)
+        let ciContext = CIContext()
         if let compositedCIImage = compositor?.outputImage {
             
             if let cgRef = ciContext.createCGImage(compositedCIImage, from: compositedCIImage.extent) {
@@ -256,10 +303,23 @@ extension ViewController: UIImagePickerControllerDelegate, UINavigationControlle
         if let videoURL = info[UIImagePickerController.InfoKey.mediaURL] as? URL {
             if selectingFirst {
                 self.fgURL = videoURL
+                if let preview = self.extractThumbnailFromVideo(url: videoURL) {
+                    DispatchQueue.main.async {
+                        self.imageView.image = preview
+                    }
+                }
                 self.selectingFirst = false
             } else if selectingSecond {
                 self.bgURL = videoURL
+                if let preview = self.extractThumbnailFromVideo(url: videoURL) {
+                    DispatchQueue.main.async {
+                        self.secondImageView.image = preview
+                    }
+                }
                 self.selectingSecond = false
+            }
+            if self.fgURL != nil && self.bgURL != nil {
+                self.mergeButton.isHidden = false
             }
         }
         

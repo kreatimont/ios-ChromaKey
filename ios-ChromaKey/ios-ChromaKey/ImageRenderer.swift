@@ -12,8 +12,8 @@ import Photos
 
 struct RenderSettings {
     
-    var width: CGFloat = 1600
-    var height: CGFloat = 900
+    var width: CGFloat = 200
+    var height: CGFloat = 200
     var fps: Int32 = 24   // 2 frames per second
     var avCodecKey = AVVideoCodecType.h264
     var videoFilename = "render"
@@ -40,6 +40,7 @@ class ImageAnimator {
     let settings: RenderSettings
     let videoWriter: VideoWriter
     var images: [UIImage]!
+    var imageFileNames: [String]
     
     var frameNum = 0
     
@@ -66,15 +67,15 @@ class ImageAnimator {
         }
     }
     
-    init(renderSettings: RenderSettings, images: [UIImage]?) {
+    init(renderSettings: RenderSettings, imageFileNames: [String]) {
         settings = renderSettings
         videoWriter = VideoWriter(renderSettings: settings)
-        if let array = images {
-            self.images = array
-        } else {
-            self.images = loadImages()
-        }
-        
+        self.imageFileNames = imageFileNames
+//        if let array = images {
+//            self.images = array
+//        } else {
+//            self.images = loadImages()
+//        }
     }
     
     func render(completion: @escaping ()->Void) {
@@ -105,14 +106,15 @@ class ImageAnimator {
         
         let frameDuration = CMTime(value: Int64(ImageAnimator.kTimescale / settings.fps), timescale: ImageAnimator.kTimescale)
         
-        while !images.isEmpty {
-            
+        while !imageFileNames.isEmpty {
             if writer.isReadyForData == false {
                 // Inform writer we have more buffers to write.
                 return false
             }
             
-            let image = images.removeFirst()
+            guard let image = FilesHelper.instance.getSavedImage(named: imageFileNames.removeFirst()) else {
+                return false
+            }
             let presentationTime = CMTimeMultiply(frameDuration, multiplier: Int32(frameNum))
             let success = videoWriter.addImage(image: image, withPresentationTime: presentationTime)
             if success == false {
@@ -121,6 +123,24 @@ class ImageAnimator {
             
             frameNum += 1
         }
+
+//        old way
+//        while !images.isEmpty {
+//
+//            if writer.isReadyForData == false {
+//                // Inform writer we have more buffers to write.
+//                return false
+//            }
+//
+//            let image = images.removeFirst()
+//            let presentationTime = CMTimeMultiply(frameDuration, multiplier: Int32(frameNum))
+//            let success = videoWriter.addImage(image: image, withPresentationTime: presentationTime)
+//            if success == false {
+//                fatalError("addImage() failed")
+//            }
+//
+//            frameNum += 1
+//        }
         
         // Inform writer all buffers have been written.
         return true
