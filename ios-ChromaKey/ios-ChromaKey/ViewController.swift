@@ -13,22 +13,43 @@ import Photos
 class ViewController: UIViewController {
 
     @IBOutlet weak var imageView: UIImageView!
+    @IBOutlet weak var secondImageView: UIImageView!
     
     let imagePickerController = UIImagePickerController()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-//        if PHPhotoLibrary.authorizationStatus() != .authorized {
-//            PHPhotoLibrary.requestAuthorization { status in
-//                guard status == .authorized else { return }
-//            }
-//        }
+        if PHPhotoLibrary.authorizationStatus() != .authorized {
+            PHPhotoLibrary.requestAuthorization { status in
+            }
+        }
         
     }
     
+    var fgURL: URL?
+    var bgURL: URL?
+    
+    var selectingFirst = false
+    var selectingSecond = false
+    
     @IBAction func handlePickVideo(_ sender: Any) {
         self.loadVideoFromGallery()
+    }
+    
+    @IBAction func handleSecondPickVideo(_ sender: Any) {
+        imagePickerController.sourceType = .photoLibrary
+        imagePickerController.delegate = self
+        imagePickerController.mediaTypes = ["public.movie"]
+        
+        self.present(imagePickerController, animated: true, completion: nil)
+        self.selectingSecond = true
+    }
+    
+    @IBAction func handleMerge(_ sender: Any) {
+        if let fg = self.fgURL, let bg = self.bgURL {
+            self.extractFrames(url: fg, bgURL: bg)
+        }
     }
     
     func loadVideoFromGallery() {
@@ -37,15 +58,22 @@ class ViewController: UIViewController {
         imagePickerController.mediaTypes = ["public.movie"]
         
         self.present(imagePickerController, animated: true, completion: nil)
+        self.selectingFirst = true
     }
     
-    func extractFrames(url: URL, fps: Int = 24) {
+    func extractFrames(url: URL, bgURL: URL, fps: Int = 24) {
         DispatchQueue.global().async {
             let asset = AVAsset(url: url)
             let imageGenerator = AVAssetImageGenerator(asset: asset)
             imageGenerator.appliesPreferredTrackTransform = true
             imageGenerator.requestedTimeToleranceAfter = .zero
             imageGenerator.requestedTimeToleranceBefore = .zero
+            
+            let bgAsset = AVAsset(url: bgURL)
+            let bgImageGenerator = AVAssetImageGenerator(asset: bgAsset)
+            bgImageGenerator.appliesPreferredTrackTransform = true
+            bgImageGenerator.requestedTimeToleranceAfter = .zero
+            bgImageGenerator.requestedTimeToleranceBefore = .zero
             
             print("Seconds: \(asset.duration.seconds)")
             
@@ -60,24 +88,24 @@ class ViewController: UIViewController {
                 cmTimes.append(cmTime)
                 frameForTimes.append(NSValue(time: cmTime))
             }
-
-//            Async way
-//            var savedCount = 0
-//            imageGenerator.generateCGImagesAsynchronously(forTimes: frameForTimes, completionHandler: { (reqTime, imageRef, actualTime, res, error) in
-//                savedCount += 1
-//                if let cgImage = imageRef {
-//                    UIImageWriteToSavedPhotosAlbum(UIImage(cgImage: cgImage), nil, nil, nil)
-//                }
-//            })
             
             var images = [UIImage]()
+            var prevBackground = UIImage(named: "default_bg")!
+            
             for cmTime in cmTimes {
                 if let imageRef = try? imageGenerator.copyCGImage(at: cmTime, actualTime: nil) {
-                    if let image = self.changeImageBG(cgImage: imageRef) {
-                        DispatchQueue.main.async {
-                            self.imageView.image = image
+                    if let bgImage = try? bgImageGenerator.copyCGImage(at: cmTime, actualTime: nil) {
+                        if let mergedImage = self.merge(cgImage: imageRef, with: UIImage(cgImage: bgImage)) {
+                            images.append(mergedImage)
+                            prevBackground = UIImage(cgImage: bgImage)
+                            DispatchQueue.main.async {
+                                self.imageView.image = mergedImage
+                            }
                         }
-                        images.append(image)
+                    } else {
+                        if let image = self.merge(cgImage: imageRef, with: prevBackground) {
+                            images.append(image)
+                        }
                     }
                     
                 }
@@ -97,6 +125,33 @@ class ViewController: UIViewController {
     }
 
     let ciContext = CIContext()
+    
+    func merge(cgImage: CGImage, with background: UIImage) -> UIImage? {
+        let foregroundCIImage = CIImage(cgImage: cgImage)
+        
+        guard let backgroundCGImage = background.cgImage else {
+            return nil
+        }
+        
+        let backgroundCIImage = CIImage(cgImage: backgroundCGImage)
+        
+        let chromaCIFilter = self.chromaKeyFilter(fromHue: 0.20, toHue: 0.55)
+        chromaCIFilter?.setValue(foregroundCIImage, forKey: kCIInputImageKey)
+        let sourceCIImageWithoutBackground = chromaCIFilter?.outputImage
+        
+        let compositor = CIFilter(name:"CISourceOverCompositing")
+        compositor?.setValue(sourceCIImageWithoutBackground, forKey: kCIInputImageKey)
+        compositor?.setValue(backgroundCIImage, forKey: kCIInputBackgroundImageKey)
+        if let compositedCIImage = compositor?.outputImage {
+            
+            if let cgRef = ciContext.createCGImage(compositedCIImage, from: compositedCIImage.extent) {
+                return UIImage(cgImage: cgRef)
+            }
+            return UIImage(ciImage: compositedCIImage)
+        }
+        return nil
+    }
+    
     func changeImageBG(cgImage: CGImage) -> UIImage? {
         let foregroundCIImage = CIImage(cgImage: cgImage)
         
@@ -199,7 +254,13 @@ extension ViewController: UIImagePickerControllerDelegate, UINavigationControlle
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
         picker.dismiss(animated: true, completion: nil)
         if let videoURL = info[UIImagePickerController.InfoKey.mediaURL] as? URL {
-            self.extractFrames(url: videoURL, fps: 24)
+            if selectingFirst {
+                self.fgURL = videoURL
+                self.selectingFirst = false
+            } else if selectingSecond {
+                self.bgURL = videoURL
+                self.selectingSecond = false
+            }
         }
         
     }
