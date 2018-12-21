@@ -285,11 +285,10 @@ class ViewController: UIViewController {
     //Chroma Key implementation
     
     func chromaKeyFilter(fromHue: CGFloat, toHue: CGFloat) -> CIFilter? {
-        // 1
+        
         let size = 64
         var cubeRGB = [Float]()
         
-        // 2
         for z in 0 ..< size {
             let blue = CGFloat(z) / CGFloat(size-1)
             for y in 0 ..< size {
@@ -312,7 +311,7 @@ class ViewController: UIViewController {
         
         let data = Data(buffer: UnsafeBufferPointer(start: &cubeRGB, count: cubeRGB.count))
         
-        // 5
+        
         let colorCubeFilter = CIFilter(name: "CIColorCube", parameters: ["inputCubeDimension": size, "inputCubeData": data])
         return colorCubeFilter
     }

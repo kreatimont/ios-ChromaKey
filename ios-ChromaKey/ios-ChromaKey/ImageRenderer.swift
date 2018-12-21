@@ -142,7 +142,7 @@ class ImageAnimator {
         
     }
     
-    // Replace this logic with your own.
+    //logic for test image load
     func loadImages() -> [UIImage] {
         var images = [UIImage]()
         for index in 1...10 {
@@ -152,14 +152,13 @@ class ImageAnimator {
         return images
     }
     
-    // This is the callback function for VideoWriter.render()
+    //callback function for VideoWriter.render()
     func appendPixelBuffers(writer: VideoWriter) -> Bool {
         
         let frameDuration = CMTime(value: Int64(ImageAnimator.kTimescale / settings.fps), timescale: ImageAnimator.kTimescale)
         
         while !imageFileNames.isEmpty {
             if writer.isReadyForData == false {
-                // Inform writer we have more buffers to write.
                 return false
             }
             
@@ -175,25 +174,6 @@ class ImageAnimator {
             frameNum += 1
         }
 
-//        old way
-//        while !images.isEmpty {
-//
-//            if writer.isReadyForData == false {
-//                // Inform writer we have more buffers to write.
-//                return false
-//            }
-//
-//            let image = images.removeFirst()
-//            let presentationTime = CMTimeMultiply(frameDuration, multiplier: Int32(frameNum))
-//            let success = videoWriter.addImage(image: image, withPresentationTime: presentationTime)
-//            if success == false {
-//                fatalError("addImage() failed")
-//            }
-//
-//            frameNum += 1
-//        }
-        
-        // Inform writer all buffers have been written.
         return true
     }
     
@@ -295,7 +275,6 @@ class VideoWriter {
             fatalError("canAddInput() returned false")
         }
         
-        // The pixel buffer adaptor must be created before we start writing.
         createPixelBufferAdaptor()
         
         if videoWriter.startWriting() == false {
@@ -319,9 +298,6 @@ class VideoWriter {
                 self.videoWriter.finishWriting() {
                     completion()
                 }
-            }
-            else {
-                // Fall through. The closure will be called again when the writer is ready.
             }
         }
     }
